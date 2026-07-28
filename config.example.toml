@@ -1,0 +1,116 @@
+# voice-journal-formatter configuration
+#
+# Copy to ~/.config/voice-journal-formatter/config.toml and edit.
+# Check your work with:  voice-journal-formatter --check
+
+[vault]
+# Your notes directory. Obsidian is not required; any folder of Markdown works.
+root = "~/Documents/MyVault"
+
+# Where new transcripts land, relative to root. This is the only folder watched.
+raw = "capture/raw"
+
+# Where the original transcript goes after it has been formatted.
+archive = "archive"
+
+# Where captures go after repeatedly failing, so they stop retrying forever.
+failed = "capture/failed"
+
+
+[runtime]
+# Wait this long after a file's last modification before touching it. Cloud-synced
+# vaults materialize files incrementally; this avoids reading half a transcript.
+min_file_age_seconds = 60
+
+# Re-stat interval used to confirm a file has stopped changing.
+settle_seconds = 1.0
+
+# Attempts before a capture is moved to the failed folder.
+max_attempts = 3
+
+# Cap on stored error text, so a failure never parks a whole transcript in state.
+max_error_chars = 2000
+
+# Process captures that already existed when voice-journal-formatter was installed.
+# Leave false unless you want to backfill; see --process-existing for a one-off.
+process_existing = false
+
+# state_dir = "~/.local/state/voice-journal-formatter"
+
+
+[llm]
+# "ollama" runs locally: nothing leaves your machine. This is the default.
+backend = "ollama"
+model = "qwen3:8b"
+url = "http://127.0.0.1:11434/api/generate"
+timeout_seconds = 900
+
+# Some local models emit reasoning traces. Leave false unless you want them.
+think = false
+
+# Optional hosted backend. Note that it runs the codex CLI with approvals and
+# sandboxing disabled so it can work unattended, which grants it full access to
+# the machine for the duration of the call. Prefer ollama unless you need this.
+[llm.codex]
+command = "codex"
+# model = "gpt-5.1-codex"
+
+
+[prompt]
+# The editing instruction shared by every note type. Tune this first; it has more
+# effect on output quality than the model choice.
+cleanup = """
+Lightly edit this voice transcript.
+
+Preserve the original order, meaning, first-person voice, and exploratory tone.
+Do not summarize it or turn it into an essay.
+
+You may do light transcript cleanup:
+
+- remove obvious filler words and false starts when they interrupt readability,
+- fix transcription errors and awkward dictated fragments,
+- split long rambling sentences into readable paragraphs,
+- lightly smooth grammar while keeping the voice-note feel,
+- add descriptive Markdown headings at major topic shifts,
+- use short paragraphs, often one idea per paragraph,
+- keep mundane details and uncertain or rambling sections if present.
+
+Aim for a cleaned-up spoken-note transcript, not a verbatim transcription and
+not polished prose.
+"""
+
+# Speech-to-text reliably mangles names it has not seen. List your corrections
+# here rather than re-editing them by hand every time.
+name_corrections = [
+  # 'Use "Niamh", not "Neve".',
+  # 'Use "Sayeed", not "Said".',
+]
+
+
+# A note type is a category of capture. Its name is the middle field of the
+# capture filename:  YYYY-MM-DD_<name>_<slug>.md
+#
+# Each type has its own extra instruction and its own output destinations. Define
+# as many or as few as you like; one is fine.
+
+[[note_type]]
+name = "audio-journal"
+outputs = [
+  { dir = "capture/formatted", filename = "{date}_{type}-formatted_{slug}.md" },
+]
+
+[[note_type]]
+name = "thought"
+instruction = """
+Keep this as an exploratory idea note. Make it clearer and more readable, but do
+not over-polish it into an essay or remove useful uncertainty.
+"""
+# Two destinations: a dated copy in the archive, and a titled note in the main
+# thoughts folder. Templates support {date}, {type}, {slug}, and {title}.
+outputs = [
+  { dir = "archive",  filename = "{date}_{type}-formatted_{slug}.md" },
+  { dir = "thoughts", filename = "{date} {title}.md" },
+]
+
+# Set false to leave the original transcript in place instead of archiving it.
+archive_raw = true
