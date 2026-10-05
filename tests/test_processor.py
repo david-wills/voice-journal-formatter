@@ -1,6 +1,8 @@
+import errno
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from voice_journal_formatter.backends import BackendError
 from voice_journal_formatter.processor import Processor, build_prompt, run_scan
@@ -127,6 +129,26 @@ class FailureHandlingTests(unittest.TestCase):
             )
 
             self.assertEqual(summary.failed, 1)
+            self.assertEqual(summary.quarantined, 0)
+            self.assertTrue(raw.exists(), "file stays put so the next run retries")
+
+    def test_evicted_icloud_file_is_downloaded_not_counted_as_a_failure(self):
+        with TemporaryDirectory() as tmp:
+            config = make_config(Path(tmp), max_attempts=1)
+            raw = write_capture(config, "2026-01-15_thought_x.md")
+            real_read_text = Path.read_text
+
+            def read_text(path, *args, **kwargs):
+                if path == raw:
+                    raise OSError(errno.EDEADLK, "Resource deadlock avoided")
+                return real_read_text(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "read_text", read_text), \
+                    mock.patch("voice_journal_formatter.processor.request_download") as download:
+                summary = run_scan(config, backend=StubBackend(response()))
+
+            download.assert_called_once_with(raw)
+            self.assertEqual(summary.count("pending"), 1)
             self.assertEqual(summary.quarantined, 0)
             self.assertTrue(raw.exists(), "file stays put so the next run retries")
 

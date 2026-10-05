@@ -7,6 +7,8 @@ The hazards this module exists to handle:
 - A crash mid-write leaves a truncated note in the vault.
 - Two overlapping runs process the same file twice.
 - A permanently failing file retries forever.
+- iCloud evicts files to save space; reading an evicted file from a background
+  process fails with EDEADLK instead of downloading it.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import time
 from datetime import datetime, timezone
@@ -44,6 +47,18 @@ def atomic_write(path: Path, content: str) -> None:
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
+
+
+def request_download(path: Path) -> None:
+    """Ask iCloud to download an evicted file so a later run can read it.
+
+    Best effort: `brctl` only exists on macOS, and a vault that isn't in iCloud
+    never gets here.
+    """
+    brctl = shutil.which("brctl")
+    if brctl is None:
+        return
+    subprocess.run([brctl, "download", str(path)], capture_output=True, check=False)
 
 
 def is_stable(path: Path, min_age_seconds: int, settle_seconds: float = 1.0) -> bool:

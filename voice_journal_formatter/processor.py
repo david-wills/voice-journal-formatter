@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,13 +16,20 @@ from .naming import (
     unique_path,
 )
 from .parsing import Result, parse_json_response, validate_result
-from .store import Lock, State, atomic_write, is_stable, move_without_overwrite
+from .store import (
+    Lock,
+    State,
+    atomic_write,
+    is_stable,
+    move_without_overwrite,
+    request_download,
+)
 
 
 @dataclass
 class Outcome:
     filename: str
-    status: str  # processed | failed | quarantined | would-process
+    status: str  # processed | pending | failed | quarantined | would-process
     written: list[Path] = field(default_factory=list)
     error: str = ""
 
@@ -120,7 +128,15 @@ class Processor:
         if dry_run:
             return Outcome(filename=path.name, status="would-process")
 
-        transcript = path.read_text(encoding="utf-8")
+        try:
+            transcript = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            # Evicted iCloud file. Not the capture's fault, so it doesn't count
+            # toward quarantine; trigger the download and pick it up next run.
+            if exc.errno != errno.EDEADLK:
+                raise
+            request_download(path)
+            return Outcome(filename=path.name, status="pending")
         result = self.generate(note_type, transcript)
         written = self.write_outputs(note_type, parsed.date, result)
 
